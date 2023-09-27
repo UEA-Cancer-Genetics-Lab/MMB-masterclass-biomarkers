@@ -1,0 +1,215 @@
+---
+title: "MMB master class - biomarkers"
+author: "Daniel Brewer"
+format:
+  html:
+    code-fold: true
+    code-summary: "Show the code"
+    embed-resources: true
+---
+
+## Introduction
+
+In this exercise you will look at some of the steps you need to go through to create a test using biomarkers to predict a clinical outcome using real data from our recent prostate cancer bacterial biomarker paper.
+
+We will be using R for this session. At each step have a go before revealing the our suggested code.
+
+[Video introducing survival analyses](https://www.youtube.com/watch?v=q0rzMgpYpbQ)
+
+
+## Load required libraries
+
+```{r}
+#| code-fold: false
+#| warning: false
+packages <- c("readr", "dplyr", "tidyr", "tibble", "ggsurvfit", "survival", "Boruta", "DataExplorer","broom","knitr")
+
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+```
+
+## Obtain and explore the data
+
+The data that we will be using is 16S data at the genus level, taken from the urine cell sediment of prostate cancer patients. It is a small dataset of 24 samples. More information about this data set can be found in [Hurst *et al. (2022)*](https://doi.org/10.1016/j.euo.2022.03.006).
+
+Task: Load in the dataset named `16s_PCa_data.RData`.
+
+```{r}
+load("16s_PCa_data.RData")
+```
+
+There are two objects:
+
+1.  `s16_clin_data` - this contains the clinical data associated with the sample
+
+    -   `sample_id` - Lab sample ID assigned.
+
+    -   `category` - the risk of progression category assigned at the time of sample collection. L = Low risk, I = Intermediate risk, H = High risk, A = advanced disease.
+
+    -   `progression_days` - The number of days between sample collection and progression (if the patient has progressed) or last follow up (if the patient hasn't progressed)
+
+    -   `progression` - Whether the patient's disease has progressed and requires additional treatment (1=Yes, 0=No)
+
+2.  `s16_community` - this contains the percentage reads assigned to each genus.
+
+Task: Explore the two R objects (the community matrix and the clinical data) using [DataExplorer](https://cran.r-project.org/web/packages/DataExplorer/vignettes/dataexplorer-intro.html) or another Exploratory Data Analysis method.
+
+```{r}
+#| eval: false
+create_report(s16_community, output_file = "community_report.html")
+create_report(s16_clin_data, output_file = "clin_data_report.html")
+```
+
+## Process the data
+
+In this step, we reduce the community matrix to the genera that we think are likely to be potential biomarkers, and combine the community matrix with the clinical data.
+
+Task:
+
+1.  Remove those values that are less than 5% and convert to presence/absence
+2.  Remove a genus when there are two or less samples where that genus is present
+3.  Merge `16_clin_data` and `s16_community`
+
+```{r}
+# Remove those values that are less than 5% and convert to presence/absence
+s16_community <- s16_community %>% mutate_if(is.numeric, ~1 * (. > 5))
+
+# Only select genera with more than 2 hits
+s16_community <- s16_community %>% select_if(function(col) is.character(col) || (is.numeric(col) && sum(col) >2))
+
+# Merge taxa and survival
+s16_merge <-  s16_clin_data %>% left_join(s16_community, by = join_by(sample_ID))
+```
+
+## Create a Kaplan-Meier plot and log-rank test result for Peptoniphilus
+To create the Kaplan-Meier plot we will be using the `ggsurvfit` R package. Please read about it's use [here](https://www.danieldsjoberg.com/ggsurvfit/).
+
+[Video introducing KM Plot and log-rank test](https://www.youtube.com/watch?v=t6vdjwhauF8&t=201s)
+
+Task: Create a Kaplan-Meir plot
+```{r}
+survfit2(Surv(progression_days, progression)~Peptoniphilus, data=s16_merge) %>% ggsurvfit()
+```
+
+Task: Calculate the log-rank *p*-value using `survdiff`. More information about using the log-rank test in R can be found at this [Data Science Tutorial](https://datasciencetut.com/how-to-perform-a-log-rank-test-in-r/).
+```{r}
+survdiff(Surv(progression_days, progression)~Peptoniphilus, data=s16_merge)$pvalue
+```
+
+
+Optional stretch task: Improve the Kaplan-Meir plot so it is closer to production ready i.e. change theme, add title, rename axes, add p-value etc.
+```{r}
+survfit2(Surv(progression_days, progression)~Peptoniphilus, data=s16_merge) %>%
+  ggsurvfit(linewidth = 1) + add_pvalue("annotation") +
+  scale_color_manual(values = c('#54738E', '#82AC7C'), name = "Peptoniphilus", labels = c("Not Present", "Present")) +
+  scale_fill_manual(values = c('#54738E', '#82AC7C'), name = "Peptoniphilus", labels = c("Not Present", "Present")) +
+  theme_minimal() +
+  add_confidence_interval() +
+  add_censor_mark(size = 2, alpha = 0.8) +
+  add_quantile(y_value = 0.6, color = "gray50", linewidth = 0.75) +
+  labs(
+    y = "Progression-free Survival",
+    x = "Days to event",
+    title = "Peptoniphilus presence in Urine sediment faction 16S",
+  ) 
+```
+
+## Examing the Anaerobic bacteria biomarker set (ABBS) and its association with progression
+
+In Hurst *et al.* (2022) we showed that the presence of five specific anaerobic genera was associated with cancer risk progression. In this section, we will investigate whether we can show this using only the 16S urine sediment data.
+
+The ABBS consists of the genera: *Ezakiella*, *Peptoniphilus*, *Porphyromonas*, *Anaerococcus*, and *Fusobacterium*.
+
+Task: Create a columm in the `s16_merge` data frame that indicates whether at least one of the ABBS genera are present.
+```{r}
+abbs_genera <- c("Ezakiella","Peptoniphilus","Porphyromonas","Anaerococcus","Fusobacterium")
+s16_merge$abbs <- rowSums(s16_merge[,colnames(s16_merge) %in% abbs_genera]) > 0
+```
+
+Task: Create a Kaplan-Meir plot
+```{r}
+survfit2(Surv(progression_days, progression)~abbs, data=s16_merge) %>% ggsurvfit()
+```
+
+Task: Calculate the log-rank *p*-value using `survdiff`. 
+```{r}
+survdiff(Surv(progression_days, progression)~abbs, data=s16_merge)$pvalue
+```
+
+
+Optional stretch task: Improve the Kaplan-Meir plot so it is closer to production ready i.e. change theme, add title, rename axes, add p-value etc.
+```{r}
+survfit2(Surv(progression_days, progression)~abbs, data=s16_merge) %>%
+  ggsurvfit(linewidth = 1) + add_pvalue("annotation") +
+  scale_color_manual(values = c('#54738E', '#82AC7C'), name = "ABBS", labels = c("Not Present", "Present")) +
+  scale_fill_manual(values = c('#54738E', '#82AC7C'), name = "ABBS", labels = c("Not Present", "Present")) +
+  theme_minimal() +
+  add_confidence_interval() +
+  add_censor_mark(size = 2, alpha = 0.8) +
+  add_quantile(y_value = 0.6, color = "gray50", linewidth = 0.75) +
+  labs(
+    y = "Progression-free Survival",
+    x = "Days to event",
+    title = "ABBS presence in Urine sediment faction 16S",
+  ) 
+```
+
+We are now going to switch to looking at the Cox proportional hazards model, so that we can examine whether the ABBS genera gives us extra information above and beyond the clinical risk category.
+
+First we will look at the ABBS category in isolation. See [this tutorial](http://www.sthda.com/english/wiki/cox-proportional-hazards-model) for more information
+
+Task: Produce the hazard ratio and significance level for ABBS presence
+```{r}
+mod_res <- coxph(Surv(progression_days, progression)~abbs, data=s16_merge) %>% tidy(exponentiate=TRUE, conf.int=TRUE)
+kable(mod_res)
+```
+PS Broom is a useful way to clean up modelling output.
+
+Answer: Hazard ratio = 6.2 *p* = 0.08.
+
+Task: Does this data set give us evidence that ABBS gives us additional information above and beyond the existing clinical risk category?
+```{r}
+mod_res <- coxph(Surv(progression_days, progression)~abbs+category, data=s16_merge) %>% tidy(exponentiate=TRUE, conf.int=TRUE)
+kable(mod_res)
+```
+
+Task: Why might these results be less than our significance threshold and different to those reported in the article?
+
+## Feature selection using Boruta
+
+So far in this session we've been focused on the ABBS set of genera, but how do you get to that set from a much larger set of data? This step is called feature selection. There are many ways to do this, including look at individual genera, or looking at clusters of samples and which genera characterise them. However, here we are going to focus on the machine learning technique called Boruta.
+
+Boruta is a feature selection method, so it takes a standard information system that you've fed to a classifier and judges which of the features are important and which are not. The algorithm is designed as a wrapper around a Random Forest classification algorithm. It iteratively removes the features that are shown by a statistical test to be less relevant than random probes. More information about Boruta can be found [here](https://cran.r-project.org/web/packages/Boruta/vignettes/inahurry.pdf) and [here](https://gitlab.com/mbq/Boruta/).
+
+Task: Apply the Boruta algorithm to the 16S dataset - which probes could be candidates?
+
+1. Apply the `Boruta()` function to taxa in `s16_merge` using the survival object (`Surv(s16_merge$progression_days, s16_merge$progression)`) as the predictor. 
+```{r}
+#| warning: false
+set.seed(1000)
+boruta_res <-  Boruta(Surv(s16_merge$progression_days, s16_merge$progression)~.,data=s16_merge[,-1:-4] )
+boruta_res
+```
+2. What genera/groups are estimated to be important?
+```{r}
+boruta_res
+```
+
+3. Plot the results
+```{r}
+plot(boruta_res)
+```
+
+## Optional stretch task - repeat the above with an RNAseq dataset
+As part of Hurst *et al.* (2022) we also examined an RNAseq dataset created from the extraceullar vesicle fraction of urine from prostate cancer patients. There are two objects `rnaseq_clin_data` and `rnaseq_community` as defined above. The only difference is that the community matrix is counts rather than percentage.
+
+```{r}
+#| code-fold: FALSE
+load("rnaseq_PCa_data.RData")
+```
