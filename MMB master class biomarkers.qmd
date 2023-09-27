@@ -41,7 +41,7 @@ The data that we will be using is 16S data at the genus level, taken from the ur
 Task: Load in the dataset named `16s_PCa_data.RData`.
 
 ```{r}
-load("16s_PCa_data.RData")
+load(url("https://raw.githubusercontent.com/UEA-Cancer-Genetics-Lab/2023-MMB-masterclass-biomarkers/main/16s_PCa_data.RData"))
 ```
 
 There are two objects:
@@ -211,5 +211,5 @@ As part of Hurst *et al.* (2022) we also examined an RNAseq dataset created from
 
 ```{r}
 #| code-fold: FALSE
-load("rnaseq_PCa_data.RData")
+load(url("https://raw.githubusercontent.com/UEA-Cancer-Genetics-Lab/2023-MMB-masterclass-biomarkers/main/rnaseq_PCa_data.RData"))
 ```
