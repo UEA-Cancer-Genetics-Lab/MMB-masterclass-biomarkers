@@ -1,0 +1,167 @@
+---
+title: "Reinvestigating Cancer Microbes"
+author: "Abraham Gihawi"
+format:
+  html:
+    embed-resources: true
+    code-fold: true
+    code-summary: "Show the code"
+editor: visual
+---
+
+## Introduction
+
+This study reanalyses data from [Poore et al 2020](https://doi.org/10.1038/s41586-020-2095-1). The authors have made their data available at this \[FTP\](https://ftp.microbio.me/pub/cancer_microbiome_analysis/TCGA/Kraken/). Let's load in the packages we will need and read the data straight from the FTP.
+
+```{r}
+#| code-fold: show
+#| code-summary: "Show the code"
+#| warning: false
+#| error: false
+#| output: false
+
+set.seed(4)
+Sys.setenv("VROOM_CONNECTION_SIZE" = 300000)
+
+
+r = getOption("repos")
+r["CRAN"] = "http://cran.us.r-project.org"
+options(repos = r)
+
+packages <- c("readr", "dplyr", "tidyr", "tibble", "ggsurvfit", "survival", "Boruta", "DataExplorer","broom","knitr", "ggfortify", "BiocManager")
+
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+
+#now for bioconductor
+BiocManager::install("limma")
+
+library(limma)
+
+
+
+raw_data <- read_csv('https://ftp.microbio.me/pub/cancer_microbiome_analysis/TCGA/Kraken/Kraken-TCGA-Raw-Data-17625-Samples.csv')
+stringent_decontamination <- read_csv('https://ftp.microbio.me/pub/cancer_microbiome_analysis/TCGA/Kraken/Kraken-TCGA-Voom-SNM-Most-Stringent-Filtering-Data.csv')
+metadata <- read_csv('https://ftp.microbio.me/pub/cancer_microbiome_analysis/TCGA/Kraken/Metadata-TCGA-All-18116-Samples.csv')
+```
+
+Look at the raw data in a PCA plot to get a general idea of the structure. Plot the data and colour it by data submitting center and by disease type.
+
+Try to do it on your own. But you can view the code if you need a hand!
+
+-   Hint - You will need to use the \`voom\` function to normalise the raw data before visualising.
+
+```{r}
+# rename column. names to something workable and not "...1"
+colnames(raw_data)[1] <- 'sampleid'
+colnames(metadata)[1] <- 'sampleid'
+colnames(stringent_decontamination)[1] <- 'sampleid'
+
+raw_metadata <- merge(raw_data, metadata, by="sampleid", all=FALSE)
+
+#reselect 
+matched_raw <- raw_metadata %>% select(-colnames(metadata))
+matched_raw_norm <- voom(matched_raw)
+
+
+pca_res <- prcomp(matched_raw_norm, scale. = FALSE)
+
+autoplot(pca_res, data = raw_metadata, colour = 'primary_site', label = FALSE)
+autoplot(pca_res, data = raw_metadata, colour = 'data_submitting_center_label', label = FALSE)
+
+
+```
+
+Is there any structure by disease type? A little bit. But Nothing major, the whole thing is confounded by an even more prominent batch effect by where the data came from. The authors claimed to have fixed this by turning everything into one central 'blob' after a supervised normalisation process ([Figure 1d](https://www.nature.com/articles/s41586-020-2095-1/figures/1)).
+
+So what is going on with these normalised values? Let's look at a really sparse feature, a genus called Hepandensovirus. This was the top weighted feature to predict adrenocortical carcinoma vs all other features in their most stringent decontamination approach.
+
+-   isolate the raw values for hepandensovirus and sampleid
+
+-   isolate the normalised values for hepandensorivus and sampleid
+
+-   merge these with the metadata
+
+-   plot the values for this feature before and after normalisation in histograms
+
+```{r}
+
+#find raw read counts
+hep_raw <- raw_data %>% select(sampleid, k__Viruses.f__Parvoviridae.g__Hepandensovirus)
+colnames(hep_raw) <- c('sampleid', 'raw_Hepandensovirus')
+
+#find normalised read counts
+hep_norm <- stringent_decontamination %>% select(sampleid, k__Viruses.f__Parvoviridae.g__Hepandensovirus)
+colnames(hep_norm) <- c('sampleid', 'norm_Hepandensovirus')
+
+
+#merge normalised read counts
+hep <- merge(hep_raw, hep_norm, by='sampleid', all=FALSE)
+
+hep <- merge(hep, metadata, by='sampleid', all=FALSE)
+
+#plot raw_read counts
+ggplot(hep, aes(x=raw_Hepandensovirus)) +
+  geom_histogram() +
+  theme_minimal() +
+  scale_y_sqrt()
+
+#One sample is positive and has 2 sequencing reads assigned to it. How do the normalised values look?
+
+#plot normalised 
+ggplot(hep, aes(x=norm_Hepandensovirus)) +
+  geom_histogram() +
+  theme_minimal() +
+  scale_y_sqrt()
+
+```
+
+It looks perfectly normal. So why on earth is Hepandensovirus the top feature for predciting adrenocortical carcinoma? Only one sample is 'positive'?
+
+Take a look more closely into the 'negative' samples in the normalised data.
+
+-   Create a dataframe only containing values that were negative in the raw sequencing reads (before normalisation)
+-   Create a jitter plot (geom_jitter) of the normalised hepandensovirus vs the raw hepandensovirus in this dataset. Colour the points by data_submitting_center_label
+
+```{r}
+hep_neg <- hep %>% filter(raw_Hepandensovirus ==0)
+
+#plot normalised 
+ggplot(hep_neg, aes(x=norm_Hepandensovirus, y=raw_Hepandensovirus, col=data_submitting_center_label)) +
+  geom_jitter() +
+  theme_minimal()
+
+
+```
+
+Interesting. There still seems to be pretty clear differences between sequencing center, despite all values initially being zero. How would this affect disease classification? Let's re-plot the data, colouring by disease type.
+
+-   Convert the normalised hepandensovirus to a character (this is unorthodox, but will be easier to display exact values)
+
+-   Make a new variable, highlighting which cases are adrenocortical carcinoma (ACC) vs all others
+
+-   Plot a bar plot of the counts for each of the normalised Hepandensovirus variables and colour by disease type
+
+```{r}
+hep_neg$char_norm_Hepandensovirus <- as.character(hep_neg$norm_Hepandensovirus)
+
+hep_neg$investigation <- gsub('TCGA-', '', hep_neg$investigation)
+
+hep_neg <- hep_neg %>% mutate(acc = case_when(
+  investigation == 'ACC' ~ 'ACC',
+  TRUE ~ 'other'
+))
+
+ggplot(hep_neg, aes(x=char_norm_Hepandensovirus, fill=acc)) +
+  geom_bar(stat='count') +
+  theme_minimal()
+
+```
+
+Interesting. From this, we can see that Hepandensovirus has been given it's own specific value! This would make it incredibly easy for a machine learning classifier to pick up on.
