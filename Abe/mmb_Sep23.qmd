@@ -3,15 +3,17 @@ title: "Reinvestigating Cancer Microbes"
 author: "Abraham Gihawi"
 format:
   html:
-    embed-resources: true
     code-fold: true
     code-summary: "Show the code"
+    embed-resources: true
 editor: visual
 ---
 
 ## Introduction
 
 This study reanalyses data from [Poore et al 2020](https://doi.org/10.1038/s41586-020-2095-1). The authors have made their data available at this \[FTP\](https://ftp.microbio.me/pub/cancer_microbiome_analysis/TCGA/Kraken/). Let's load in the packages we will need and read the data straight from the FTP.
+
+### Loading in the packages and data
 
 ```{r}
 #| code-fold: show
@@ -51,6 +53,10 @@ stringent_decontamination <- read_csv('https://ftp.microbio.me/pub/cancer_microb
 metadata <- read_csv('https://ftp.microbio.me/pub/cancer_microbiome_analysis/TCGA/Kraken/Metadata-TCGA-All-18116-Samples.csv')
 ```
 
+#### 
+
+### Plot a PCA to look at the structure of the data
+
 Look at the raw data in a PCA plot to get a general idea of the structure. Plot the data and colour it by data submitting center and by disease type.
 
 Try to do it on your own. But you can view the code if you need a hand!
@@ -79,6 +85,8 @@ autoplot(pca_res, data = raw_metadata, colour = 'data_submitting_center_label', 
 ```
 
 Is there any structure by disease type? A little bit. But Nothing major, the whole thing is confounded by an even more prominent batch effect by where the data came from. The authors claimed to have fixed this by turning everything into one central 'blob' after a supervised normalisation process ([Figure 1d](https://www.nature.com/articles/s41586-020-2095-1/figures/1)).
+
+### Plot individual taxa to look at the raw/normalised values
 
 So what is going on with these normalised values? Let's look at a really sparse feature, a genus called Hepandensovirus. This was the top weighted feature to predict adrenocortical carcinoma vs all other features in their most stringent decontamination approach.
 
@@ -165,3 +173,27 @@ ggplot(hep_neg, aes(x=char_norm_Hepandensovirus, fill=acc)) +
 ```
 
 Interesting. From this, we can see that Hepandensovirus has been given it's own specific value! This would make it incredibly easy for a machine learning classifier to pick up on.
+
+### How linked is the metadata to cancer type?
+
+Something fishy is going on here. There's a big batch effect that still seems present. How are these taxa given such specific values?
+
+-   Produce a table of the the hospitals where each sample was collected (the variable name is `tissue_source_site_label`\`)
+
+-   Do you notice any hospital names that might be linked with tumour type?
+
+```{r}
+
+table(metadata$tissue_source_site_label)
+
+```
+
+Looking at the values we see hospitals like:
+
+-   NCI Urologic Oncology Branch
+
+-   Gynecologic Oncology Group
+
+-   Dept of Neurosurgery at University of Heidelberg
+
+We can see how some hospitals are clearly linked with tumour type. And with a huge batch effect in the data it is likely that this could explain it.
