@@ -5,6 +5,7 @@ format:
   html:
     code-fold: true
     code-summary: "Show the code"
+    self-contained: true
     embed-resources: true
 editor: visual
 ---
@@ -48,9 +49,9 @@ library(limma)
 
 
 
-raw_data <- read_csv('https://ftp.microbio.me/pub/cancer_microbiome_analysis/TCGA/Kraken/Kraken-TCGA-Raw-Data-17625-Samples.csv')
-stringent_decontamination <- read_csv('https://ftp.microbio.me/pub/cancer_microbiome_analysis/TCGA/Kraken/Kraken-TCGA-Voom-SNM-Most-Stringent-Filtering-Data.csv')
-metadata <- read_csv('https://ftp.microbio.me/pub/cancer_microbiome_analysis/TCGA/Kraken/Metadata-TCGA-All-18116-Samples.csv')
+raw_data <- read_csv('https://raw.githubusercontent.com/UEA-Cancer-Genetics-Lab/MMB-masterclass-biomarkers/refs/heads/main/Data/Kraken-TCGA-Raw-Data-17625-Samples.csv')
+stringent_decontamination <- read_csv('https://raw.githubusercontent.com/UEA-Cancer-Genetics-Lab/MMB-masterclass-biomarkers/refs/heads/main/Data/Kraken-TCGA-Voom-SNM-Most-Stringent-Filtering-Data.csv')
+metadata <- read_csv('https://raw.githubusercontent.com/UEA-Cancer-Genetics-Lab/MMB-masterclass-biomarkers/refs/heads/main/Data/Metadata-TCGA-All-18116-Samples.csv')
 ```
 
 #### 
