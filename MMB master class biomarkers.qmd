@@ -22,7 +22,7 @@ We will be using R for this session. At each step have a go before revealing the
 ```{r}
 #| code-fold: false
 #| warning: false
-packages <- c("readr", "dplyr", "tidyr", "tibble", "ggsurvfit", "survival", "Boruta", "DataExplorer","broom","knitr")
+packages <- c("readr", "dplyr", "tidyr", "tibble", "ggsurvfit", "survival", "Boruta", "DataExplorer","broom","knitr","ranger")
 
 # Install packages not yet installed
 installed_packages <- packages %in% rownames(installed.packages())
@@ -193,7 +193,7 @@ Task: Apply the Boruta algorithm to the 16S dataset - which probes could be cand
 ```{r}
 #| warning: false
 set.seed(1000)
-boruta_res <-  Boruta(Surv(s16_merge$progression_days, s16_merge$progression)~.,data=s16_merge[,-1:-4] )
+boruta_res <-  Boruta(Surv(s16_merge$progression_days, s16_merge$progression)~.,data=s16_merge[,-1:-4], getImp = getImpRfZ)
 boruta_res
 ```
 2. What genera/groups are estimated to be important?
